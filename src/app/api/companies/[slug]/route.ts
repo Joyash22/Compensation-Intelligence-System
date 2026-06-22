@@ -4,11 +4,11 @@ import { LEVEL_ORDER } from "@/types";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const company = await prisma.company.findUnique({
-      where: { slug: params.slug },
+      where: { slug: (await params).slug },
       include: {
         submissions: {
           orderBy: { submittedAt: "desc" },
@@ -72,7 +72,7 @@ export async function GET(
 
     // Role breakdown
     const roleMap = new Map<string, number[]>();
-    subs.forEach((s: any) => {
+    (await subs).forEach((s: any) => {
       const arr = roleMap.get(s.normalizedTitle) ?? [];
       arr.push(s.totalComp);
       roleMap.set(s.normalizedTitle, arr);
