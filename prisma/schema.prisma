@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  submissions   Submission[]
+  savedEntries  SavedEntry[]
+  comparisons   Comparison[]
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Normalized company entity - deduplicates "google", "Google Inc.", "GOOGLE LLC"
+model Company {
+  id           String   @id @default(cuid())
+  name         String   @unique  // canonical normalized name
+  aliases      String[] // raw names that map here
+  slug         String   @unique
+  industry     String?
+  hqLocation   String?
+  logoUrl      String?
+  website      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submissions  Submission[]
+}
+
+// Core salary submission - one row per data point
+model Submission {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id])
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+
+  // Role info
+  title         String   // raw submitted title
+  normalizedTitle String // e.g. "Software Engineer"
+  level         Level
+  levelLabel    String   // e.g. "L5", "Senior", "IC3" - company-specific label
+  department    String?
+
+  // Location
+  location      String
+  country       String   @default("India")
+  remote        Boolean  @default(false)
+
+  // Compensation (all in INR annually)
+  baseSalary    Float
+  bonus         Float    @default(0)   // target bonus
+  stockValue    Float    @default(0)   // annual stock value (vest/4 for 4yr grants)
+  totalComp     Float    // computed: base + bonus + stock
+
+  // Metadata
+  yoe           Int?     // years of experience
+  yearsAtCompany Int?
+  currency      String   @default("INR")
+  submittedAt   DateTime @default(now())
+  verified      Boolean  @default(false)
+  source        String?  // "manual" | "csv"
+
+  savedBy       SavedEntry[]
+  comparisonItems ComparisonItem[]
+
+  @@index([companyId])
+  @@index([level])
+  @@index([normalizedTitle])
+  @@index([totalComp])
+}
+
+// Enum for levels — platform-agnostic, company labels map here
+enum Level {
+  INTERN
+  JUNIOR      // L3, SDE-1, IC1, Junior
+  MID         // L4, SDE-2, IC2, Mid
+  SENIOR      // L5, SDE-3, IC3, Senior
+  STAFF       // L6, Principal, IC4, Staff
+  PRINCIPAL   // L7, Distinguished, IC5
+  DIRECTOR
+  VP
+  C_LEVEL
+}
+
+model SavedEntry {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  savedAt      DateTime   @default(now())
+
+  @@unique([userId, submissionId])
+}
+
+model Comparison {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  name      String?
+  createdAt DateTime @default(now())
+
+  items     ComparisonItem[]
+}
+
+model ComparisonItem {
+  id           String     @id @default(cuid())
+  comparisonId String
+  comparison   Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  addedAt      DateTime   @default(now())
+
+  @@unique([comparisonId, submissionId])
+}
